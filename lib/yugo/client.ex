@@ -2,9 +2,6 @@ defmodule Yugo.Client do
   @moduledoc """
   A persistent connection to an IMAP server.
 
-  Normally you do not call the functions in this module directly, but rather start a [`Client`](`Yugo.Client`) as part
-  of your application's supervision tree. For example:
-
       defmodule MyApp.Application do
         use Application
 
@@ -12,7 +9,6 @@ defmodule Yugo.Client do
         def start(_type, _args) do
           children = [
             {Yugo.Client,
-             name: :example_client,
              server: "imap.example.com",
              username: "me@example.com",
              password: "pa55w0rd"}
@@ -25,13 +21,8 @@ defmodule Yugo.Client do
   See [`start_link`](`Yugo.Client.start_link/1`) for a list of possible arguments.
   """
 
-  use GenServer
-  alias Yugo.{Conn, Parser, Filter}
-
-  @typedoc """
-  The identifier used to refer to a [`Client`](`Yugo.Client`).
-  """
-  @type name :: term
+    use GenServer
+    alias Yugo.{Conn, Parser, Messages}
 
   @doc """
   Starts an IMAP client process linked to the calling process.
@@ -43,8 +34,6 @@ defmodule Yugo.Client do
     * `:username` - Required. Username used to log in.
 
     * `:password` - Required. Password used to log in.
-
-    * `:name` - Required. A name used to reference this [`Client`](`Yugo.Client`). Can be any term.
 
     * `:server` - Required. The location of the IMAP server, e.g. `"imap.example.com"`.
 
@@ -76,14 +65,13 @@ defmodule Yugo.Client do
           server: String.t(),
           username: String.t(),
           password: String.t(),
-          name: name,
           port: 1..65535,
           tls: boolean,
           ssl_verify: :verify_none | :verify_peer,
           mailbox: String.t()
         ) :: GenServer.on_start()
   def start_link(args) do
-    for required <- [:server, :username, :password, :name] do
+    for required <- [:server, :username, :password] do
       Keyword.has_key?(args, required) || raise "Missing required argument `:#{required}`."
     end
 
@@ -92,14 +80,13 @@ defmodule Yugo.Client do
       |> Keyword.put_new(:port, 993)
       |> Keyword.put_new(:tls, true)
       |> Keyword.put_new(:mailbox, "INBOX")
-      |> Keyword.put_new(:ssl_verify, :verify_peer)
+      |> Keyword.put_new(:ssl_verify, :verify_none)
       |> Keyword.update!(:server, &to_charlist/1)
 
     args[:ssl_verify] in [:verify_peer, :verify_none] ||
       raise ":ssl_verify option must be one of: :verify_peer, :verify_none"
 
-    name = {:via, Registry, {Yugo.Registry, args[:name]}}
-    GenServer.start_link(__MODULE__, args, name: name)
+    GenServer.start_link(__MODULE__, args)
   end
 
   @common_connect_opts [packet: :line, active: :once, mode: :binary]
@@ -125,24 +112,6 @@ defmodule Yugo.Client do
   end
 
   @impl true
-  def handle_cast({:subscribe, pid, filter}, conn) do
-    conn =
-      %{conn | filters: [{filter, pid} | conn.filters]}
-      |> update_attrs_needed_by_filters()
-
-    {:noreply, conn}
-  end
-
-  @impl true
-  def handle_cast({:unsubscribe, pid}, conn) do
-    conn =
-      %{conn | filters: Enum.reject(conn.filters, &(elem(&1, 1) == pid))}
-      |> update_attrs_needed_by_filters()
-
-    {:noreply, conn}
-  end
-
-  @impl true
   def handle_info({:do_init, args}, _state) do
     {:ok, socket} =
       if args[:tls] do
@@ -150,13 +119,12 @@ defmodule Yugo.Client do
           args[:server],
           args[:port],
           ssl_opts(args[:server], args[:ssl_verify])
-        )
+        ) 
       else
         :gen_tcp.connect(args[:server], args[:port], @common_connect_opts)
       end
 
     conn = %Conn{
-      my_name: args[:name],
       tls: args[:tls],
       socket: socket,
       server: args[:server],
@@ -218,18 +186,6 @@ defmodule Yugo.Client do
     {:noreply, conn}
   end
 
-  defp update_attrs_needed_by_filters(conn) do
-    attrs =
-      [
-        Enum.any?(conn.filters, fn {f, _} -> Filter.needs_flags?(f) end) && "FLAGS",
-        Enum.any?(conn.filters, fn {f, _} -> Filter.needs_envelope?(f) end) && "ENVELOPE"
-      ]
-      |> Enum.reject(&(&1 == false))
-      |> Enum.join(" ")
-
-    %{conn | attrs_needed_by_filters: attrs}
-  end
-
   # If the previously received line ends with `{123}` (a synchronizing literal), parse more lines until we
   # have at least 123 bytes. If the line ends with another `{123}`, repeat the process.
   defp recv_literals(%Conn{} = conn, [prev | _] = acc, n_remaining \\ 0) do
@@ -263,7 +219,7 @@ defmodule Yugo.Client do
 
   defp handle_packet(data, conn) do
     if conn.got_server_greeting do
-      actions = Parser.parse_response(data)
+      actions = Parser.parse_response(data) 
 
       conn =
         conn
@@ -449,17 +405,17 @@ defmodule Yugo.Client do
     end
   end
 
-  # Removes the message from conn.unprocessed_messages and sends it to subscribers with matching filters
+  # Removes the message from conn.unprocessed_messages and process it
   defp release_message(conn, seqnum) do
     {msg, conn} = pop_in(conn, [Access.key!(:unprocessed_messages), seqnum])
-
-    for {filter, pid} <- conn.filters do
-      if Filter.accepts?(filter, msg) do
-        send(pid, {:email, conn.my_name, package_message(msg)})
-      end
-    end
-
+    :ok = publish_new_message(package_message(msg))
     conn
+  end
+
+  defp publish_new_message(msg) do 
+    Messages.normalize_message(msg)
+    |> Messages.publish()
+    :ok
   end
 
   # Preprocesses/cleans the message before it is sent to a subscriber
@@ -494,20 +450,6 @@ defmodule Yugo.Client do
 
   defp get_part_structures(bodies, structure) when is_list(bodies),
     do: Enum.map(bodies, &get_part_structures(&1, structure))
-
-  # FETCHes the message attributes needed to apply filters
-  defp fetch_message(conn, seqnum) do
-    conn =
-      conn
-      |> put_in([Access.key!(:unprocessed_messages), seqnum, :fetched], :filter)
-
-    if conn.attrs_needed_by_filters == "" do
-      conn
-    else
-      conn
-      |> send_command("FETCH #{seqnum} (#{conn.attrs_needed_by_filters})")
-    end
-  end
 
   defp apply_action(conn, action) do
     case action do
@@ -645,6 +587,11 @@ defmodule Yugo.Client do
     end
 
     conn
+  end
+
+  defp fetch_message(conn, seqnum) do
+    conn
+    |> put_in([Access.key!(:unprocessed_messages), seqnum, :fetched], :filter)
   end
 
   defp send_command(conn, cmd, on_response \\ fn conn, _status, _text -> conn end) do

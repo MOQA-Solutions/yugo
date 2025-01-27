@@ -22,8 +22,7 @@ defmodule Yugo.MixProject do
 
   def application do
     [
-      extra_applications: [:logger, :ssl],
-      mod: {Yugo.Application, []}
+      extra_applications: [:logger, :ssl]
     ]
   end
 

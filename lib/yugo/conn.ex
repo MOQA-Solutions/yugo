@@ -2,7 +2,6 @@ defmodule Yugo.Conn do
   @moduledoc false
 
   @type t :: %__MODULE__{
-          my_name: Yugo.Client.name(),
           tls: boolean,
           socket: :gen_tcp.socket() | :ssl.sslsocket(),
           server: String.t(),
@@ -30,16 +29,13 @@ defmodule Yugo.Conn do
           idling: boolean,
           idle_timer: reference | nil,
           idle_timed_out: boolean,
-          filters: [{Yugo.Filter.t(), pid}],
           unprocessed_messages: %{integer: %{}},
-          attrs_needed_by_filters: String.t(),
           ssl_verify: :verify_none | :verify_peer
         }
 
   @derive {Inspect, except: [:password]}
-  @enforce_keys [:my_name, :tls, :socket, :username, :password, :server, :mailbox, :ssl_verify]
+  @enforce_keys [:tls, :socket, :username, :password, :server, :mailbox, :ssl_verify]
   defstruct [
-    :my_name,
     :tls,
     :socket,
     :server,
@@ -64,8 +60,6 @@ defmodule Yugo.Conn do
     idling: false,
     idle_timer: nil,
     idle_timed_out: false,
-    filters: [],
-    unprocessed_messages: %{},
-    attrs_needed_by_filters: ""
+    unprocessed_messages: %{}
   ]
 end
