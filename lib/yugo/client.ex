@@ -11,7 +11,10 @@ defmodule Yugo.Client do
             {Yugo.Client,
              server: "imap.example.com",
              username: "me@example.com",
-             password: "pa55w0rd"}
+             password: "pa55w0rd"
+             encryption: "true", 
+             port: "993"
+             }
           ]
 
           Supervisor.start_link(children, strategy: :one_for_one)
@@ -37,11 +40,11 @@ defmodule Yugo.Client do
 
     * `:server` - Required. The location of the IMAP server, e.g. `"imap.example.com"`.
 
-    * `:port` - The port to connect to the server via. Defaults to `993`.
-
     * `:tls` - Whether or not to connect using TLS. Defaults to `true`. If you set this to `false`,
     Yugo will make the initial connection without TLS, then upgrade to a TLS connection (using STARTTLS)
     before logging in. Yugo will never send login credentials over an insecure connection.
+
+    * `:port` - The port to connect to the server via. Defaults to `993`.
 
     * `:mailbox` - The name of the mailbox to monitor for emails. Defaults to `"INBOX"`.
     The default "INBOX" mailbox is defined in the IMAP standard. If your account has other mailboxes,
@@ -65,23 +68,24 @@ defmodule Yugo.Client do
           server: String.t(),
           username: String.t(),
           password: String.t(),
+          tls: String.t(),
           port: 1..65535,
-          tls: boolean,
           ssl_verify: :verify_none | :verify_peer,
           mailbox: String.t()
         ) :: GenServer.on_start()
   def start_link(args) do
-    for required <- [:server, :username, :password] do
+    for required <- [:server, :username, :password, :tls, :port] do
       Keyword.has_key?(args, required) || raise "Missing required argument `:#{required}`."
     end
 
     args =
       args
-      |> Keyword.put_new(:port, 993)
-      |> Keyword.put_new(:tls, true)
+      |> Keyword.update!(:server, &to_charlist/1)
+      |> Keyword.update!(:tls, &String.to_atom/1) 
+      |> Keyword.update!(:port, &String.to_integer/1)
       |> Keyword.put_new(:mailbox, "INBOX")
       |> Keyword.put_new(:ssl_verify, :verify_none)
-      |> Keyword.update!(:server, &to_charlist/1)
+      
 
     args[:ssl_verify] in [:verify_peer, :verify_none] ||
       raise ":ssl_verify option must be one of: :verify_peer, :verify_none"
