@@ -5,7 +5,6 @@ defmodule Yugo.Messages do
   @publisher :publisher
   @topic "imap_messages"
   @table :messages
-  @new_line "\n"
 
   def get_publisher(), do: 
     @publisher
@@ -47,12 +46,20 @@ defmodule Yugo.Messages do
         id: msg[:message_id],
 
         from: msg[:from]
-              |> List.first()
-              |> elem(1),
+              |> case do 
+                   [{_, from}] -> 
+                     from 
+                   {_, from} -> 
+                     from 
+                 end,
 
         to: msg[:to]
-            |> List.first()
-            |> elem(1),
+            |> case do 
+                 [{_, to}] -> 
+                   to 
+                 {_, to} -> 
+                   to 
+               end,
 
         cc: msg[:cc],
 
@@ -61,10 +68,12 @@ defmodule Yugo.Messages do
         date: msg[:date],
 
         body: msg[:body]
-              |> List.first()
-              |> elem(2)
-              |> get_message_body(msg[:in_reply_to]) 
-                                 
+              |> case do 
+                   [{_, _, body} | _tail] -> 
+                     body
+                   {_, _, body} -> 
+                     body 
+                 end             
     }
   end 
 
@@ -73,18 +82,7 @@ defmodule Yugo.Messages do
 
   
 
-###############################################################################################"
-
-  defp get_message_body(body, nil), do: body
-
-  defp get_message_body(body, _in_reply_to), do:  
-    body 
-    |> String.split(Integer.to_string(DateTime.utc_now().year))
-    |> List.first() 
-    |> String.split(@new_line)
-    |> List.pop_at(-1)
-    |> elem(1)
-    |> Enum.join(@new_line)
+###############################################################################################
 
   defp struct_to_tuple(message), do: 
     {
