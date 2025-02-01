@@ -28,7 +28,8 @@ defmodule Yugo.MixProject do
 
   defp deps do
     [
-      {:ex_doc, "~> 0.29", only: :dev, runtime: false}
+      {:ex_doc, "~> 0.29", only: :dev, runtime: false},
+      {:req, "~>0.5.0"}
     ]
   end
 

@@ -30,7 +30,8 @@ defmodule Yugo.Conn do
           idle_timer: reference | nil,
           idle_timed_out: boolean,
           unprocessed_messages: %{integer: %{}},
-          ssl_verify: :verify_none | :verify_peer
+          ssl_verify: :verify_none | :verify_peer,
+          timer: reference()
         }
 
   @derive {Inspect, except: [:password]}
@@ -60,6 +61,7 @@ defmodule Yugo.Conn do
     idling: false,
     idle_timer: nil,
     idle_timed_out: false,
-    unprocessed_messages: %{}
+    unprocessed_messages: %{}, 
+    timer: nil
   ]
 end

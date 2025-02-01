@@ -1,3 +1,4 @@
 defmodule Yugo do
-  
+
 end
+

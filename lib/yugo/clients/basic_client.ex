@@ -1,4 +1,4 @@
-defmodule Yugo.Client do
+defmodule Yugo.Clients.BasicClient do
   @moduledoc """
   A persistent connection to an IMAP server.
 
