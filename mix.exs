@@ -29,7 +29,8 @@ defmodule Yugo.MixProject do
   defp deps do
     [
       {:ex_doc, "~> 0.29", only: :dev, runtime: false},
-      {:req, "~>0.5.0"}
+      {:req, "~>0.5.0"}, 
+      {:mnesia_database, git: "https://github.com/MOQA-Solutions/mnesia_database"}
     ]
   end
 

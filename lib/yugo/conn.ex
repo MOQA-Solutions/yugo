@@ -27,11 +27,13 @@ defmodule Yugo.Conn do
           uid_next: nil | integer,
           mailbox_mutability: :read_only | :read_write,
           idling: boolean,
-          idle_timer: reference | nil,
+          idle_timer: reference() | nil,
+          expiration_timer: reference() | nil, 
+          fetch_timer: reference() | nil,
           idle_timed_out: boolean,
           unprocessed_messages: %{integer: %{}},
           ssl_verify: :verify_none | :verify_peer,
-          timer: reference()
+          
         }
 
   @derive {Inspect, except: [:password]}
@@ -60,8 +62,9 @@ defmodule Yugo.Conn do
     mailbox_mutability: nil,
     idling: false,
     idle_timer: nil,
+    expiration_timer: nil, 
+    fetch_timer: nil,
     idle_timed_out: false,
-    unprocessed_messages: %{}, 
-    timer: nil
+    unprocessed_messages: %{}
   ]
 end
