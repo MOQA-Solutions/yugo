@@ -78,6 +78,7 @@ defmodule Yugo.Clients.BasicClient do
     conn = %Conn{
       tls: args[:tls],
       socket: socket,
+      email: args[:email],
       server: args[:server],
       username: args[:username],
       password: args[:password],
@@ -87,6 +88,12 @@ defmodule Yugo.Clients.BasicClient do
 
     {:noreply, conn}
   end
+
+  def handle_info(_info, conn), do: {:noreply, conn} 
+
+  def handle_call(_call, _from, conn), do: {:noreply, conn}
+
+  def handle_cast(_cast, conn), do: {:noreply, conn}
 
   def access_imap_server(conn) do
     conn

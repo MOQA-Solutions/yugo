@@ -4,17 +4,18 @@ defmodule Yugo.Clients.Client do
     quote do
 
         use GenServer 
-        alias Yugo.{Conn, Parser, Messages, Utils}
+        alias Yugo.{Conn, Parser, Registry, Messages, Utils}
 
         @common_connect_opts [packet: :line, active: :once, mode: :binary]
         @noop_poll_interval 5000
         @idle_timeout 1000 * 60 * 27
         @fetch_timeout 1000 * 60 * 5
 
-        @default_start_time_fetch_interval 2
+        @default_start_time_fetch_interval 5
         @default_periodic_fetch_interval 2
 
         @spec start_link(
+                email: String.t(),
                 server: String.t(),
                 username: String.t(),
                 password: String.t(),
@@ -25,7 +26,7 @@ defmodule Yugo.Clients.Client do
                 ) :: GenServer.on_start()
 
         def start_link(args) do
-          for required <- [:server, :username, :password, :tls, :port] do
+          for required <- [:email, :server, :username, :password, :tls, :port] do
             Keyword.has_key?(args, required) || raise "Missing required argument `:#{required}`."
           end
 
@@ -108,12 +109,28 @@ defmodule Yugo.Clients.Client do
           {:noreply, conn}
         end
 
+##################### handling infos only if the server is free #######################
+
         def handle_info({:timeout , fetch_timer , :fetch_messages}, conn) when 
-          conn.fetch_timer == fetch_timer, do: 
-          {:noreply, conn 
-                     |> cancel_idle()
-                     |> on_start_response(:ok, :ok)
-          }
+          conn.state == :running and 
+          conn.fetch_timer == fetch_timer, do:
+            {:noreply, conn 
+                       |> Map.put(:state, :maybe_fetching)
+                       |> cancel_idle()
+                       |> on_start_response(:ok, :ok)
+            }
+
+        def handle_info({caller, :manual_fetch}, conn) when conn.state == :running do
+          :erlang.cancel_timer(conn.fetch_timer)  
+            {:noreply, conn 
+                       |> Map.put(:state, :maybe_fetching)
+                       |> Map.put(:caller, caller)
+                       |> cancel_idle()
+                       |> on_start_response(:ok, :ok)
+            }
+        end
+
+############################################################################################
 
         # If the previously received line ends with `{123}` (a synchronizing literal), parse more lines until we
         # have at least 123 bytes. If the line ends with another `{123}`, repeat the process.
@@ -194,6 +211,9 @@ defmodule Yugo.Clients.Client do
         end
 
         defp on_start_response(conn, :ok, _text) do
+          if conn.state == :authenticated do 
+            true = Registry.register(conn.email, self()) 
+          end
           conn
           |> send_command("SELECT #{Utils.quote_string(conn.mailbox)}", &on_select_response/3)
         end
@@ -207,16 +227,16 @@ defmodule Yugo.Clients.Client do
                                      :start_time_fetch_period, 
                                      @default_start_time_fetch_interval
                               ) 
-              :started -> 
+              _ -> 
                 @default_periodic_fetch_interval
             end
-
-          conn = %{conn | state: :started}
+  
           if Regex.match?(~r/^\[READ-ONLY\]/i, text) do
             %{conn | mailbox_mutability: :read_only}
           else
             %{conn | mailbox_mutability: :read_write}
           end
+          |> Map.put(:state, :maybe_fetching)
           |> fetch_messages(period)
           |> maybe_noop_poll()
         end
@@ -259,8 +279,16 @@ defmodule Yugo.Clients.Client do
         end
 
         defp maybe_process_messages(conn) do
-          if command_in_progress?(conn) or conn.unprocessed_messages == %{} or conn.state != :started do
-            conn
+          if command_in_progress?(conn) or 
+             conn.unprocessed_messages == %{} or 
+             (
+               conn.state != :running and 
+               conn.state != :fetching and 
+               conn.state != :maybe_fetching
+             ) 
+               do
+                 conn 
+
           else
             process_earliest_message(conn)
           end
@@ -344,15 +372,22 @@ defmodule Yugo.Clients.Client do
 
         # Removes the message from conn.unprocessed_messages and process it
         defp release_message(conn, seqnum) do
-          {msg, conn} = pop_in(conn, [Access.key!(:unprocessed_messages), seqnum])
-          :ok = publish_new_message(package_message(msg))
-          conn
-        end
+          {msg, conn} = pop_in(conn, [Access.key!(:unprocessed_messages), seqnum]) 
+          
+          new_msg = msg
+                    |> package_message()
+                    |> Messages.normalize_message()
 
-        defp publish_new_message(msg) do 
-          Messages.normalize_message(msg)
-          |> Messages.publish()
-          :ok
+          :ok = Messages.put(Utils.message_struct_to_tuple(new_msg)) 
+          Messages.publish(new_msg)
+          
+          if (conn.state == :fetching) do 
+            conn 
+            |> Map.put(:fetch_size, conn.fetch_size - 1)
+          else 
+            conn 
+          end 
+          |> set_state()
         end
 
         # Preprocesses/cleans the message before it is sent to a subscriber
@@ -552,25 +587,20 @@ defmodule Yugo.Clients.Client do
           |> Map.put(:next_cmd_tag, tag + 1)
         end
 
-        defp fetch_messages(conn, period) do 
-          conn = 
-             if conn.idling do
-                conn
-                |> cancel_idle()
-              else
-                conn
-              end 
-            
-          conn  = do_fetch_messages(conn, period) 
-
-          conn = conn
-                 |> maybe_process_messages()
-
+        defp fetch_messages(conn, period) do
           fetch_timer = :erlang.start_timer(@fetch_timeout , self() , :fetch_messages) 
-
-          conn 
-          |> Map.put(:fetch_timer, fetch_timer)          
-          |> maybe_idle()
+          conn = 
+            if conn.idling do
+              conn
+              |> cancel_idle()
+            else
+              conn
+            end 
+            |> Map.put(:fetch_timer, fetch_timer)
+            |> do_fetch_messages(period) 
+            |> set_state()
+            |> maybe_process_messages()     
+            |> maybe_idle()
         end
 
         defp do_fetch_messages(conn, period) do 
@@ -623,6 +653,7 @@ defmodule Yugo.Clients.Client do
                                  end 
                               )
                   )
+          |> Map.put(:fetch_size, length(new_messages))
           
 
         defp receive_search_result(conn, res \\ nil) do 
@@ -686,6 +717,24 @@ defmodule Yugo.Clients.Client do
             :inet.setopts(conn.socket, active: :once)
           end
         end          
+
+        defp set_state(conn) do 
+          case conn.fetch_size do 
+            0 ->
+              if conn.caller do 
+                send(conn.caller, :done)
+                Map.put(conn, :caller, nil)
+              else 
+                conn 
+              end 
+              |> Map.put(:state, :running)
+
+            _ -> 
+              conn
+              |> Map.put(:state, :fetching) 
+          end 
+        end 
+
     end  
   end
 end

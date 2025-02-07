@@ -248,8 +248,14 @@ defmodule Yugo.Parser do
 
   # takes a list of parser functions to parse an IMAP parenthesized list
   # pass `:lax` instead of `:strict` if it shouldn't raise when the list ends but there are still unused parsers.
-  defp parse_list(<<?(, rest::binary>>, parsers, strict? \\ :strict),
-    do: parse_list_aux(rest, parsers, [], strict?)
+  defp parse_list(rest, parsers, strict? \\ :strict), do: 
+    do_parse_list(rest, parsers, [], strict?)
+
+  defp do_parse_list(<<?(, rest::binary>>, parsers, acc, strict?), do: 
+    parse_list_aux(rest, parsers, acc, strict?)
+
+  defp do_parse_list(<<?(, ?(, rest::binary>>, parsers, acc, strict?), do:
+    parse_list_aux(rest, parsers, acc, strict?)
 
   defp parse_list_aux(<<?), rest::binary>>, [], acc, :strict), do: {Enum.reverse(acc), rest}
   defp parse_list_aux(<<?), rest::binary>>, _, acc, :lax), do: {Enum.reverse(acc), rest}
@@ -352,12 +358,13 @@ defmodule Yugo.Parser do
   end
 
   defp rfc5322_to_datetime(string) do
+    rfc5322_date = normalize_offset(string)
     monthname = ~w(Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec)
 
     parts =
       Regex.named_captures(
         ~r/^(?:[^,]+,)?\s*(?<day>\d+)\s+(?<month>#{Enum.join(monthname, "|")})\s+(?<year>\d{4})\s+(?<hour>\d{2}):(?<minute>\d{2}):?(?<second>\d{2})?\s+(?<offset_sign>[+\-])(?<offset_hours>\d{2})(?<offset_minutes>\d{2})/i,
-        string
+        rfc5322_date
       )
 
     month = 1 + Enum.find_index(monthname, &(&1 == parts["month"]))
@@ -439,4 +446,28 @@ defmodule Yugo.Parser do
 
     {{:body, {:onepart, body}}, rest}
   end
+
+  defp normalize_offset(str) do 
+    {offset, date} = str 
+                     |> String.split()
+                     |> List.pop_at(-1)
+
+    new_offset = do_normalize_offset(offset) 
+    Enum.join(date ++ new_offset, " ")
+  end 
+
+  defp do_normalize_offset(<<"+", _rest::binary>> = offset), do: [offset] 
+  defp do_normalize_offset("UT"), do: ["+0000"]
+  defp do_normalize_offset("GMT"), do: ["+0000"] 
+  defp do_normalize_offset("EDT"), do: ["-0400"] 
+  defp do_normalize_offset("EST"), do: ["-0500"]
+  defp do_normalize_offset("CDT"), do: ["-0500"]
+  defp do_normalize_offset("CST"), do: ["-0600"]
+  defp do_normalize_offset("MDT"), do: ["-0600"]
+  defp do_normalize_offset("MST"), do: ["-0700"]
+  defp do_normalize_offset("PDT"), do: ["-0700"]
+  defp do_normalize_offset("PST"), do: ["-0800"]
+  defp do_normalize_offset(<<"(", _rest::binary>>), do: [] 
+  defp do_normalize_offset(_), do: ["+0000"]
+  
 end

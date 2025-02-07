@@ -89,6 +89,7 @@ defmodule Yugo.Clients.GoogleOAuthClient do
     conn = %Conn{
       tls: args[:tls],
       socket: socket,
+      email: args[:email],
       server: args[:server],
       username: args[:username],
       password: token,
@@ -102,6 +103,12 @@ defmodule Yugo.Clients.GoogleOAuthClient do
   def handle_info({:timeout , expiration_timer , :expired_token}, conn) when 
           conn.expiration_timer == expiration_timer, do: 
           exit("expired token") 
+
+  def handle_info(_info, conn), do: {:noreply, conn} 
+
+  def handle_call(_call, _from, conn), do: {:noreply, conn}
+
+  def handle_cast(_cast, conn), do: {:noreply, conn}
 
   def access_imap_server(conn) do
     core = xoauth_core(conn.username, conn.password)
