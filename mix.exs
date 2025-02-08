@@ -30,7 +30,7 @@ defmodule Yugo.MixProject do
     [
       {:ex_doc, "~> 0.29", only: :dev, runtime: false},
       {:req, "~>0.5.0"}, 
-      {:mnesia_database, git: "https://github.com/MOQA-Solutions/mnesia_database"},
+      {:mnesia_database, git: "https://github.com/MOQA-Solutions/mnesia_database"}
       # {:mnesia_database, path: "/home/abdelghani/fds/mnesia_database"}
     ]
   end

@@ -264,7 +264,7 @@ defmodule Yugo.Parser do
     do: parse_list_aux(rest, parsers, acc, strict?)
 
   defp parse_list_aux(rest, [p | parsers], acc, strict?) do
-    {parser_output, rest} = p.(rest)
+    {parser_output, rest} = p.(rest) 
     parse_list_aux(rest, parsers, [parser_output | acc], strict?)
   end
 
@@ -434,7 +434,7 @@ defmodule Yugo.Parser do
           &parse_optional_number/1
         ],
         :lax
-      )
+      ) 
 
     mime_type = "#{String.downcase(mime1)}/#{String.downcase(mime2)}"
 

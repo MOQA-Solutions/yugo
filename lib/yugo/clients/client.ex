@@ -4,14 +4,14 @@ defmodule Yugo.Clients.Client do
     quote do
 
         use GenServer 
-        alias Yugo.{Conn, Parser, Registry, Messages, Utils}
+        alias Yugo.{Conn, Parser, Registry, Messages, Utils, Presence.ImapPresences}
 
         @common_connect_opts [packet: :line, active: :once, mode: :binary]
         @noop_poll_interval 5000
         @idle_timeout 1000 * 60 * 27
         @fetch_timeout 1000 * 60 * 5
 
-        @default_start_time_fetch_interval 5
+        @default_start_time_fetch_interval 10
         @default_periodic_fetch_interval 2
 
         @spec start_link(
@@ -120,15 +120,20 @@ defmodule Yugo.Clients.Client do
                        |> on_start_response(:ok, :ok)
             }
 
-        def handle_info({caller, :manual_fetch}, conn) when conn.state == :running do
-          :erlang.cancel_timer(conn.fetch_timer)  
-            {:noreply, conn 
-                       |> Map.put(:state, :maybe_fetching)
-                       |> Map.put(:caller, caller)
-                       |> cancel_idle()
-                       |> on_start_response(:ok, :ok)
-            }
+        def handle_info({caller, :manual_fetch, fetch_interval}, conn) when 
+          conn.state == :running do
+            :erlang.cancel_timer(conn.fetch_timer)  
+              {:noreply, conn 
+                         |> Map.put(:state, :maybe_fetching)
+                         |> Map.put(:fetch_interval, fetch_interval)
+                         |> Map.put(:caller, caller)
+                         |> cancel_idle()
+                         |> on_start_response(:ok, :ok)
+              }
         end
+
+        def handle_info(:restart, conn) when conn.state == :running, do: 
+          exit("restart command")
 
 ############################################################################################
 
@@ -210,9 +215,10 @@ defmodule Yugo.Clients.Client do
           |> __MODULE__.access_imap_server() 
         end
 
-        defp on_start_response(conn, :ok, _text) do
+        defp on_start_response(conn, :ok, data) do
           if conn.state == :authenticated do 
-            true = Registry.register(conn.email, self()) 
+            true = ImapPresences.register(conn.email) 
+            Utils.publish({:imap_state, conn.email, :on})
           end
           conn
           |> send_command("SELECT #{Utils.quote_string(conn.mailbox)}", &on_select_response/3)
@@ -220,15 +226,19 @@ defmodule Yugo.Clients.Client do
 
         defp on_select_response(conn, :ok, text) do
           period = 
-            case conn.state do 
-              :authenticated -> 
-                Application.get_env(
-                                     :petal_core, 
-                                     :start_time_fetch_period, 
-                                     @default_start_time_fetch_interval
-                              ) 
-              _ -> 
-                @default_periodic_fetch_interval
+            if conn.fetch_interval do 
+              conn.fetch_interval 
+            else 
+              case conn.state do 
+                :authenticated -> 
+                  Application.get_env(
+                                      :petal_core, 
+                                      :start_time_fetch_period, 
+                                      @default_start_time_fetch_interval
+                                    ) 
+                _ -> 
+                  @default_periodic_fetch_interval
+              end
             end
   
           if Regex.match?(~r/^\[READ-ONLY\]/i, text) do
@@ -378,8 +388,9 @@ defmodule Yugo.Clients.Client do
                     |> package_message()
                     |> Messages.normalize_message()
 
-          :ok = Messages.put(Utils.message_struct_to_tuple(new_msg)) 
-          Messages.publish(new_msg)
+          :ok = Messages.global_put(Utils.message_struct_to_tuple(new_msg))
+          :ok = Messages.local_put(conn.email, new_msg.id) 
+          Utils.publish({:message, conn.email, new_msg})
           
           if (conn.state == :fetching) do 
             conn 
@@ -632,7 +643,7 @@ defmodule Yugo.Clients.Client do
                                 )
                   message_ID = receive_fetch_message_id_result(new_conn)
                    
-                  {new_conn, if Messages.new_message?(message_ID) do 
+                  {new_conn, if Messages.new_message?(conn.email, message_ID) do 
                                [message_index | acc]
                              else 
                                acc 
@@ -728,6 +739,7 @@ defmodule Yugo.Clients.Client do
                 conn 
               end 
               |> Map.put(:state, :running)
+              |> Map.put(:fetch_interval, nil)
 
             _ -> 
               conn

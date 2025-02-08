@@ -4,6 +4,9 @@ defmodule Yugo.Utils do
 
   alias Yugo.Messages.Message
 
+  @publisher :publisher
+  @presence_server :presence_server
+
   def get_fetch_start_date(period), do:
     DateTime.utc_now() 
     |> DateTime.to_unix() 
@@ -52,6 +55,28 @@ defmodule Yugo.Utils do
       date: message(message, :date),
       body: message(message, :body)
     }
+
+  def pid_to_string(pid) do 
+    pid
+    |> :erlang.pid_to_list()
+    |> to_string()
+  end
+
+  def string_to_pid(str) do
+    str
+    |> String.to_charlist() 
+    |> :erlang.list_to_pid()
+  end
+
+  def get_publisher(), do: 
+    @publisher
+
+  def get_presence_server(), do: 
+    @presence_server
+
+  def publish(msg), do: 
+    send(@publisher, msg) 
+    
 
 ################################################################################################
 
