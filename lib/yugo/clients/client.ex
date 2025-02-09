@@ -387,6 +387,7 @@ defmodule Yugo.Clients.Client do
           new_msg = msg
                     |> package_message()
                     |> Messages.normalize_message()
+                    |> IO.inspect()
 
           :ok = Messages.global_put(Utils.message_struct_to_tuple(new_msg))
           :ok = Messages.local_put(conn.email, new_msg.id) 

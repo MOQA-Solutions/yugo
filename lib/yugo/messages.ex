@@ -65,14 +65,12 @@ defmodule Yugo.Messages do
                     end
                   )
 
-  
-
   def new_message?(table, key), do: 
     global_get(key) == [] || local_get(table, key) == []
 
   def normalize_message(msg) do 
     %Message{
-        id: msg[:message_id],
+        id: String.replace(msg[:message_id], " ", ""),
 
         from: msg[:from]
               |> case do 

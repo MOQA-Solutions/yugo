@@ -46,6 +46,7 @@ defmodule Yugo.Parser do
       [applicable_flags: ["\\ANSWERED", "\\FLAGGED", "\\DELETED", "\\SEEN", "\\DRAFT"]]
   """
   def parse_response(data) when is_binary(data) do
+
     data = String.replace_suffix(data, "\r\n", "")
 
     case data do
@@ -84,7 +85,7 @@ defmodule Yugo.Parser do
   # `resp` has the leading "* " removed
   # returns a keyword list of actions
   defp parse_untagged(resp) do
-    case Regex.run(~r/^(OK|NO|BAD|PREAUTH|BYE|SEARCH) (.*)$/is, resp, capture: :all_but_first) do
+    case Regex.run(~r/^(OK|NO|BAD|PREAUTH|BYE|SEARCH|FETCH) (.*)$/is, resp, capture: :all_but_first) do
       [status, rest_of_packet] ->
         status = atomize_status_code(status)
         parse_untagged_with_status(rest_of_packet, status)
@@ -254,8 +255,8 @@ defmodule Yugo.Parser do
   defp do_parse_list(<<?(, rest::binary>>, parsers, acc, strict?), do: 
     parse_list_aux(rest, parsers, acc, strict?)
 
-  defp do_parse_list(<<?(, ?(, rest::binary>>, parsers, acc, strict?), do:
-    parse_list_aux(rest, parsers, acc, strict?)
+  # defp do_parse_list(<<?(, ?(, rest::binary>>, parsers, acc, strict?), do:
+  #  parse_list_aux(rest, parsers, acc, strict?)
 
   defp parse_list_aux(<<?), rest::binary>>, [], acc, :strict), do: {Enum.reverse(acc), rest}
   defp parse_list_aux(<<?), rest::binary>>, _, acc, :lax), do: {Enum.reverse(acc), rest}
@@ -277,7 +278,7 @@ defmodule Yugo.Parser do
     do: parse_variable_length_list_aux(rest, parser, acc)
 
   defp parse_variable_length_list_aux(rest, parser, acc) do
-    {parser_output, rest} = parser.(rest)
+    {parser_output, rest} = parser.(rest) 
     parse_variable_length_list_aux(rest, parser, [parser_output | acc])
   end
 
@@ -296,8 +297,7 @@ defmodule Yugo.Parser do
   defp parse_address(rest) do
     {[name, _adl, mailbox, host], rest} =
       parse_list(rest, [&parse_nstring/1, &parse_nstring/1, &parse_nstring/1, &parse_nstring/1])
-
-    {{name, "#{String.downcase(mailbox)}@#{String.downcase(host)}"}, rest}
+    {{name, "#{downcase(mailbox)}@#{downcase(host)}"}, rest}
   end
 
   defp parse_address_list(rest) do
@@ -469,5 +469,8 @@ defmodule Yugo.Parser do
   defp do_normalize_offset("PST"), do: ["-0800"]
   defp do_normalize_offset(<<"(", _rest::binary>>), do: [] 
   defp do_normalize_offset(_), do: ["+0000"]
+
+  defp downcase(nil), do: "nil" 
+  defp downcase(str), do: String.downcase(str)
   
 end
