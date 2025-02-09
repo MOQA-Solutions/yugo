@@ -255,8 +255,8 @@ defmodule Yugo.Parser do
   defp do_parse_list(<<?(, rest::binary>>, parsers, acc, strict?), do: 
     parse_list_aux(rest, parsers, acc, strict?)
 
-  # defp do_parse_list(<<?(, ?(, rest::binary>>, parsers, acc, strict?), do:
-  #  parse_list_aux(rest, parsers, acc, strict?)
+  defp do_parse_list(<<?(, ?(, rest::binary>>, parsers, acc, strict?), do:
+    parse_list_aux(rest, parsers, acc, strict?)
 
   defp parse_list_aux(<<?), rest::binary>>, [], acc, :strict), do: {Enum.reverse(acc), rest}
   defp parse_list_aux(<<?), rest::binary>>, _, acc, :lax), do: {Enum.reverse(acc), rest}
