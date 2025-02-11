@@ -4,7 +4,8 @@ defmodule Yugo.Messages do
   alias Yugo.Utils
 
   @all_messages_topic "messages:*"
-  @table :message
+  @table :message 
+  @messages_part_size 20
 
 ############################ Database API ########################### 
 
@@ -24,6 +25,9 @@ defmodule Yugo.Messages do
 
 ######################################################################
 
+  def get_messages_part_size(), do: 
+    @messages_part_size
+
   def get_all_messages_topic(), do: 
     @all_messages_topic 
 
@@ -35,10 +39,9 @@ defmodule Yugo.Messages do
     |> Enum.reduce(
                     [], 
                     fn(key, acc) -> 
-                      [message] = global_get(key) 
                       [
-                        message
-                        |> make_ui_message() 
+                        global_get(key)
+                        |> List.first()
                         | acc
                       ] 
                     end
@@ -50,21 +53,32 @@ defmodule Yugo.Messages do
     |> local_all_keys() 
     |> Enum.reduce(
                     [], 
-                    fn(id, acc) ->
-                      res = global_get(id) 
-                      case res do 
-                        [message] -> 
-                          [
-                            message
-                            |> make_ui_message() 
-                            | acc
-                          ] 
-                        _ -> 
-                          acc 
-                      end 
+                    fn(key, acc) -> 
+                      [
+                        global_get(key)
+                        |> List.first()
+                        | acc
+                      ] 
                     end
                   )
 
+  def get_next_part_of_messages(messages_IDs, start_index), do:  
+    messages_IDs
+    |> Enum.slice(start_index, @messages_part_size) 
+    |> Enum.reduce(
+                    [], 
+                    fn(message_id, acc) ->
+                      [
+                        global_get(message_id)
+                        |> List.first() 
+                        |> Utils.message_tuple_to_struct() 
+                        |> make_ui_message()
+                        | acc
+                      ]
+                    end
+                 )
+    |> Enum.reverse()
+           
   def new_message?(table, key), do: 
     global_get(key) == [] || local_get(table, key) == []
 
@@ -103,6 +117,11 @@ defmodule Yugo.Messages do
     }
   end     
 
+  def make_ui_message(message), do: 
+    message
+    |> Map.put(:cc, nil)
+    |> Map.put(:body, nil)
+
 ##################################################################################
 
   defp get_to({_, to}), do: to 
@@ -110,11 +129,5 @@ defmodule Yugo.Messages do
   defp get_to(msg_to), do: 
     Enum.reduce(msg_to, [], fn({_, to}, acc) -> [to | acc] end)
 
-  defp make_ui_message(message), do: 
-    message
-    |> Utils.message_tuple_to_struct()
-    |> Map.put(:cc, nil)
-    |> Map.put(:body, nil) 
-      
 end
 
