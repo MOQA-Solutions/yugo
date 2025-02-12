@@ -169,7 +169,6 @@ defmodule Yugo.Clients.Client do
         end
 
         defp handle_packet(data, conn) do
-
           if conn.got_server_greeting do
             actions = 
               case Parser.parse_response(data) do 
@@ -682,13 +681,13 @@ defmodule Yugo.Clients.Client do
               socket_kind in [:ssl, :tcp] -> 
 
                 case data do           
-                  <<"* SEARCH", _rest::binary>> ->        
+                  <<"* SEARCH", _rest::binary>> = res -> 
                     :ok = activate_socket_once(conn)
                     receive_search_result(conn, Parser.parse_response(data))
 
                   other ->
                     :ok = activate_socket_once(conn)
-                    if String.contains?(String.downcase(other), "ok search completed") do
+                    if String.contains?(String.downcase(other), "ok search") do
                       res
                     else 
                       receive_search_result(conn, res)
