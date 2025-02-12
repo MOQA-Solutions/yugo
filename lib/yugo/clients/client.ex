@@ -59,12 +59,6 @@ defmodule Yugo.Clients.Client do
         end
 
         @impl true
-        def terminate(_reason, conn) do
-          conn
-          |> send_command("LOGOUT")
-        end
-
-        @impl true
         def handle_info({socket_kind, socket, data}, conn) when 
           socket_kind in [:ssl, :tcp] and 
           socket == conn.socket 
@@ -133,7 +127,7 @@ defmodule Yugo.Clients.Client do
         end
 
         def handle_info(:restart, conn) when conn.state == :running, do: 
-          exit("restart command")
+          {:stop, :normal, conn}
 
 ############################################################################################
 
@@ -561,6 +555,10 @@ defmodule Yugo.Clients.Client do
             {:error, index} -> 
               conn 
               |> Map.put(:unprocessed_messages, Map.delete(conn.unprocessed_messages, index)) 
+              |> maybe_end_fetching()
+
+            true -> 
+              conn
               |> maybe_end_fetching()
           
           end

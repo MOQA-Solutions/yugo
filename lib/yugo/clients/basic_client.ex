@@ -2,6 +2,8 @@ defmodule Yugo.Clients.BasicClient do
   
   use Yugo.Clients.Client 
 
+  @socket_connection_timeout 10000
+
   @moduledoc """
   A persistent connection to an IMAP server.
 
@@ -63,8 +65,8 @@ defmodule Yugo.Clients.BasicClient do
   See the top of this page for example `Application` usage.
   """
 
-  def handle_info({:do_init, args}, _state) do  
-     {:ok, socket} =
+  def handle_info({:do_init, args}, state) do  
+    res =
       if args[:tls] do
         :ssl.connect(
           args[:server],
@@ -72,21 +74,31 @@ defmodule Yugo.Clients.BasicClient do
           ssl_opts(args[:server], args[:ssl_verify])
         ) 
       else
-        :gen_tcp.connect(args[:server], args[:port], @common_connect_opts)
+        :gen_tcp.connect(
+          args[:server], 
+          args[:port], 
+          @common_connect_opts
+        )
       end
 
-    conn = %Conn{
-      tls: args[:tls],
-      socket: socket,
-      email: args[:email],
-      server: args[:server],
-      username: args[:username],
-      password: args[:password],
-      mailbox: args[:mailbox],
-      ssl_verify: args[:ssl_verify]
-    }
+    case res do 
+      {:ok, socket} ->
+        conn = %Conn{
+          tls: args[:tls],
+          socket: socket,
+          email: args[:email],
+          server: args[:server],
+          username: args[:username],
+          password: args[:password],
+          mailbox: args[:mailbox],
+          ssl_verify: args[:ssl_verify]
+        }
+        {:noreply, conn}
 
-    {:noreply, conn}
+      {:error, _error} -> 
+        Process.sleep(@socket_connection_timeout) 
+        {:stop, :normal, state}
+    end
   end
 
   def handle_info(_info, conn), do: {:noreply, conn} 

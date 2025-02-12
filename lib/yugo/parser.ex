@@ -53,8 +53,12 @@ defmodule Yugo.Parser do
           parse_untagged(rest)
         rescue 
           _error -> 
-            [str_index, _rest] = String.split(rest, " FETCH", parts: 2) 
-            {:error, String.to_integer(str_index)} 
+            case String.split(rest, " FETCH", parts: 2) do 
+              [str_index, _rest] ->  
+                {:error, String.to_integer(str_index)}
+              _rest -> 
+                :error 
+            end  
         end 
 
       <<"+ ", _::binary>> ->
