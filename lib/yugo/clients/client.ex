@@ -169,8 +169,15 @@ defmodule Yugo.Clients.Client do
         end
 
         defp handle_packet(data, conn) do
+
           if conn.got_server_greeting do
-            actions = Parser.parse_response(data) 
+            actions = 
+              case Parser.parse_response(data) do 
+                {:error, index} = res -> 
+                  [res] 
+                res ->
+                  res 
+              end 
 
             conn =
               conn
@@ -391,14 +398,9 @@ defmodule Yugo.Clients.Client do
           :ok = Messages.global_put(Utils.message_struct_to_tuple(new_msg))
           :ok = Messages.local_put(conn.email, new_msg.id) 
           Utils.publish({:message, conn.email, new_msg})
-          
-          if (conn.state == :fetching) do 
-            conn 
-            |> Map.put(:fetch_size, conn.fetch_size - 1)
-          else 
-            conn 
-          end 
-          |> set_state()
+
+          conn 
+          |> maybe_end_fetching()
         end
 
         # Preprocesses/cleans the message before it is sent to a subscriber
@@ -556,6 +558,12 @@ defmodule Yugo.Clients.Client do
 
             {:fetch, {_seq_num, :uid, _uid}} ->
               conn
+
+            {:error, index} -> 
+              conn 
+              |> Map.put(:unprocessed_messages, Map.delete(conn.unprocessed_messages, index)) 
+              |> maybe_end_fetching()
+          
           end
         end
 
@@ -728,6 +736,16 @@ defmodule Yugo.Clients.Client do
             :inet.setopts(conn.socket, active: :once)
           end
         end          
+        
+        defp maybe_end_fetching(conn) do
+          if (conn.state == :fetching) do 
+            conn 
+            |> Map.put(:fetch_size, conn.fetch_size - 1)
+          else 
+            conn 
+          end 
+          |> set_state()
+        end
 
         defp set_state(conn) do 
           case conn.fetch_size do 

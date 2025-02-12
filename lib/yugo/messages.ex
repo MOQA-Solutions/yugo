@@ -102,18 +102,7 @@ defmodule Yugo.Messages do
 
         date: msg[:date],
 
-        body: msg[:body]
-              |> case do 
-                   {_, _, body} -> 
-                     body 
-
-                   [{_, _, body} | _tail] -> 
-                     body
-
-                   [[{_, _, body} | _tail1] | _tail2] -> 
-                     body
-                   
-                 end             
+        body: get_body(msg[:body])        
     }
   end     
 
@@ -128,6 +117,9 @@ defmodule Yugo.Messages do
 
   defp get_to(msg_to), do: 
     Enum.reduce(msg_to, [], fn({_, to}, acc) -> [to | acc] end)
+
+  defp get_body({_, _, body}), do: body 
+  defp get_body([h | _tail]), do: get_body(h)
 
 end
 

@@ -46,19 +46,23 @@ defmodule Yugo.Parser do
       [applicable_flags: ["\\ANSWERED", "\\FLAGGED", "\\DELETED", "\\SEEN", "\\DRAFT"]]
   """
   def parse_response(data) when is_binary(data) do
-
-    data = String.replace_suffix(data, "\r\n", "")
-
+  data = String.replace_suffix(data, "\r\n", "")
     case data do
       <<"* ", rest::binary>> ->
-        parse_untagged(rest)
+        try do 
+          parse_untagged(rest)
+        rescue 
+          _error -> 
+            [str_index, _rest] = String.split(rest, " FETCH", parts: 2) 
+            {:error, String.to_integer(str_index)} 
+        end 
 
       <<"+ ", _::binary>> ->
         [:continuation]
 
       _ ->
         parse_tagged(data)
-    end
+    end 
   end
 
   # resp is the rest of the response, after the "<tag> "
@@ -187,7 +191,7 @@ defmodule Yugo.Parser do
 
   defp parse_one_att(rest) do
     [name, rest] = Regex.run(~r/^ ?(\S+) (.*)$/is, rest, capture: :all_but_first)
-    name = String.upcase(name)
+    name = String.upcase(name) 
 
     cond do
       name == "FLAGS" ->
@@ -244,6 +248,9 @@ defmodule Yugo.Parser do
 
         {content, rest} = parse_string(rest)
         {{:body_content, {body_number, content}}, rest}
+
+      true -> 
+        parse_one_att(rest)
     end
   end
 
@@ -253,10 +260,11 @@ defmodule Yugo.Parser do
     do_parse_list(rest, parsers, [], strict?)
 
   defp do_parse_list(<<?(, rest::binary>>, parsers, acc, strict?), do: 
+    do_parse_list(rest, parsers, acc, strict?)
+    
+  defp do_parse_list(rest, parsers, acc, strict?) do 
     parse_list_aux(rest, parsers, acc, strict?)
-
-  defp do_parse_list(<<?(, ?(, rest::binary>>, parsers, acc, strict?), do:
-    parse_list_aux(rest, parsers, acc, strict?)
+  end 
 
   defp parse_list_aux(<<?), rest::binary>>, [], acc, :strict), do: {Enum.reverse(acc), rest}
   defp parse_list_aux(<<?), rest::binary>>, _, acc, :lax), do: {Enum.reverse(acc), rest}
@@ -441,7 +449,11 @@ defmodule Yugo.Parser do
     body = %{
       mime_type: mime_type,
       encoding: String.upcase(enc),
-      params: Map.new(params)
+      params: if params == "nil" do 
+                nil
+              else 
+                Map.new(params)
+              end
     }
 
     {{:body, {:onepart, body}}, rest}
