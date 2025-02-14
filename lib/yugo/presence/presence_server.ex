@@ -22,7 +22,7 @@ defmodule Yugo.Presence.PresenceServer do
 
   def handle_info({:"EXIT", pid, _reason}, state) do
     {:ok, email} = clear_imap_worker_data(pid)
-    msg = {:imap_state, email, :off}
+    msg = {:imap_state, email, :off, "Shutdown"}
     Utils.publish(msg)
     {:noreply, state}
   end
@@ -32,9 +32,12 @@ defmodule Yugo.Presence.PresenceServer do
 ############################################################################################### 
 
   defp clear_imap_worker_data(pid) do
-    str_pid = Utils.pid_to_string(pid)
-    [imap_presence] = ImapPresences.index_get(str_pid) 
-    email = elem(imap_presence, 1)
+    email = 
+      Utils.pid_to_string(pid)
+      |> ImapPresences.index_get()
+      |> List.first()
+      |> elem(1)
+
     :ok = ImapPresences.delete(email)
     {:ok, email}
   end

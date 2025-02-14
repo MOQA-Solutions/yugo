@@ -79,8 +79,13 @@ defmodule Yugo.Messages do
                  )
     |> Enum.reverse()
            
-  def new_message?(table, key), do: 
-    global_get(key) == [] || local_get(table, key) == []
+  def new_message?(table, key) do
+    if (global_get(key) == [] or local_get(table, key) == []) do 
+      true
+    else 
+      false 
+    end
+  end 
 
   def normalize_message(msg) do 
     %Message{

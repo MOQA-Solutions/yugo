@@ -1,7 +1,5 @@
 defmodule Yugo.Presence.ImapPresences do 
 
-  import Yugo.Presence.ImapPresence
-
   alias Yugo.Utils
 
   @table :imap_presence
@@ -17,17 +15,11 @@ defmodule Yugo.Presence.ImapPresences do
 
 #####################################################################################
 
-  def register(email) do
-    :ok = put(imap_presence(
-                              email: email,
-                              pid: Utils.pid_to_string(self())
-                          )
-            ) 
+  def register(imap_presence) do
+    :ok = put(imap_presence)
     Utils.get_presence_server()
     |> :erlang.whereis()
     |> Process.link()
   end
-       
-    
 
 end

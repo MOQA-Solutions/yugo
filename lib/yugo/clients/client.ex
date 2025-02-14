@@ -4,6 +4,9 @@ defmodule Yugo.Clients.Client do
     quote do
 
         use GenServer 
+
+        import Yugo.Presence.ImapPresence
+
         alias Yugo.{Conn, Parser, Registry, Messages, Utils, Presence.ImapPresences}
 
         @common_connect_opts [packet: :line, active: :once, mode: :binary]
@@ -13,6 +16,10 @@ defmodule Yugo.Clients.Client do
 
         @default_start_time_fetch_interval 10
         @default_periodic_fetch_interval 2
+
+        @socket_reconnection_timeout 5000 
+        @login_failure_timeout 5000
+        @invalid_token_timeout 5000
 
         @spec start_link(
                 email: String.t(),
@@ -54,9 +61,11 @@ defmodule Yugo.Clients.Client do
 
         @impl true
         def init(args) do
+          email = args[:email]
+          :ok = Utils.register_and_publish_presence(email, :off, "Attempting to Connect...")
           send(self(), {:do_init, args})
           {:ok, %{}}
-        end
+        end    
 
         @impl true
         def handle_info({socket_kind, socket, data}, conn) when 
@@ -215,10 +224,9 @@ defmodule Yugo.Clients.Client do
           |> __MODULE__.access_imap_server() 
         end
 
-        defp on_start_response(conn, :ok, data) do
+        defp on_start_response(conn, :ok, _text) do
           if conn.state == :authenticated do 
-            true = ImapPresences.register(conn.email) 
-            Utils.publish({:imap_state, conn.email, :on})
+            :ok = Utils.register_and_publish_presence(conn.email, :on) 
           end
           conn
           |> send_command("SELECT #{Utils.quote_string(conn.mailbox)}", &on_select_response/3)
@@ -440,7 +448,12 @@ defmodule Yugo.Clients.Client do
               resp_fn.(conn, status, text)
 
             {:tagged_response, {tag, status, text}} when status in [:bad, :no] ->
-              raise "Got `#{status |> to_string() |> String.upcase()}` response status: `#{text}`. Command that caused this response: `#{conn.tag_map[tag].command}`"
+              if (String.downcase(text) == "login failed.") do
+                {%{on_response: resp_fn}, conn} = pop_in(conn, [Access.key!(:tag_map), tag])
+                resp_fn.(conn, status, text) 
+              else 
+                raise "Got `#{status |> to_string() |> String.upcase()}` response status: `#{text}`. Command that caused this response: `#{conn.tag_map[tag].command}`"
+              end
 
             :continuation ->
               conn
@@ -558,6 +571,7 @@ defmodule Yugo.Clients.Client do
               |> maybe_end_fetching()
 
             true -> 
+              
               conn
               |> maybe_end_fetching()
           
@@ -646,7 +660,7 @@ defmodule Yugo.Clients.Client do
                              |> send_manual_command(
                                   "FETCH #{message_index} (BODY.PEEK[HEADER.FIELDS (MESSAGE-ID)])"
                                 )
-                  message_ID = receive_fetch_message_id_result(new_conn)
+                  message_ID = receive_fetch_message_id_result(new_conn) 
                    
                   {new_conn, if Messages.new_message?(conn.email, message_ID) do 
                                [message_index | acc]
@@ -702,30 +716,37 @@ defmodule Yugo.Clients.Client do
             {socket_kind, socket, data} when  
               socket == conn.socket and  
               socket_kind in [:ssl, :tcp] -> 
+                :ok = activate_socket_once(conn)
                 case data do 
-                  <<"Message-ID: ", message_id::binary>> -> 
-                    :ok = activate_socket_once(conn)
-                    receive_fetch_message_id_result(conn, message_id
-                                                          |> String.split()
-                                                          |> List.first()
-                                                   )
 
-                  other ->
-                    :ok = activate_socket_once(conn)
+                  <<" <", _rest::binary>> -> 
+                    <<" ", message_id::binary>> = data 
+                    receive_fetch_message_id_result(conn, message_id
+                                                    |> String.split()
+                                                    |> List.first()
+                                                  ) 
+
+                  <<tag::binary-size(12), message_id::binary>> when 
+                    tag == "Message-ID: " or tag == "Message-Id: " -> 
+                      receive_fetch_message_id_result(conn, message_id
+                                                      |> String.split()
+                                                      |> List.first()
+                                                  )  
+                  
+                  other -> 
                     if String.contains?(String.downcase(other), "ok success") or 
-                       String.contains?(String.downcase(other), "ok fetch completed")
-                         do 
-                          res
+                       String.contains?(String.downcase(data), "ok fetch completed") do
+                         res 
                     else 
-                      receive_fetch_message_id_result(conn, res)
+                      receive_fetch_message_id_result(conn, res) 
                     end 
                 end
 
             after 5000 -> 
               exit("timeout receiving message id")
           end 
-        end
-
+        end          
+              
         defp activate_socket_once(conn) do 
           if conn.tls do
             :ssl.setopts(conn.socket, active: :once)

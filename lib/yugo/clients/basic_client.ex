@@ -2,8 +2,6 @@ defmodule Yugo.Clients.BasicClient do
   
   use Yugo.Clients.Client 
 
-  @socket_connection_timeout 10000
-
   @moduledoc """
   A persistent connection to an IMAP server.
 
@@ -66,6 +64,7 @@ defmodule Yugo.Clients.BasicClient do
   """
 
   def handle_info({:do_init, args}, state) do  
+    email = args[:email]
     res =
       if args[:tls] do
         :ssl.connect(
@@ -83,10 +82,11 @@ defmodule Yugo.Clients.BasicClient do
 
     case res do 
       {:ok, socket} ->
+        :ok = Utils.register_and_publish_presence(email, :off, "Connected")
         conn = %Conn{
           tls: args[:tls],
           socket: socket,
-          email: args[:email],
+          email: email,
           server: args[:server],
           username: args[:username],
           password: args[:password],
@@ -96,7 +96,8 @@ defmodule Yugo.Clients.BasicClient do
         {:noreply, conn}
 
       {:error, _error} -> 
-        Process.sleep(@socket_connection_timeout) 
+        :ok = Utils.register_and_publish_presence(email, :off, "Failed to Connect")        
+        Process.sleep(@socket_reconnection_timeout) 
         {:stop, :normal, state}
     end
   end
@@ -120,4 +121,11 @@ defmodule Yugo.Clients.BasicClient do
     %{conn | state: :authenticated}
     |> send_command("CAPABILITY", &on_start_response/3)
   end
+
+  def on_login_response(conn, :no, _text) do
+    :ok = Utils.register_and_publish_presence(conn.email, :off, "Failed to Authenticate") 
+    Process.sleep(@login_failure_timeout) 
+    exit(:normal)
+  end 
+
 end

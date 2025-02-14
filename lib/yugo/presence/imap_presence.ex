@@ -4,6 +4,8 @@ defmodule Yugo.Presence.ImapPresence do
 
   Record.defrecord(:imap_presence, 
                    email: nil,
-                   pid: nil
+                   pid: nil, 
+                   state: nil,
+                   reason: nil
                   )  
 end 

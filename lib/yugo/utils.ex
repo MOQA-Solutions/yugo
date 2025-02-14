@@ -1,8 +1,10 @@
 defmodule Yugo.Utils do 
 
   import Yugo.Messages.Message
+  import Yugo.Presence.ImapPresence
 
   alias Yugo.Messages.Message
+  alias Yugo.Presence.ImapPresences
 
   @publisher :publisher
   @presence_server :presence_server
@@ -76,7 +78,12 @@ defmodule Yugo.Utils do
 
   def publish(msg), do: 
     send(@publisher, msg) 
-    
+
+  def register_and_publish_presence(email, state, reason \\ nil) do 
+    true = ImapPresences.register(build_imap_presence(email, state, reason))
+    publish({:imap_state, email, state, reason})
+    :ok
+  end
 
 ################################################################################################
 
@@ -103,6 +110,14 @@ defmodule Yugo.Utils do
   defp month_abbr(10), do: "oct"
   defp month_abbr(11), do: "nov"
   defp month_abbr(12), do: "dec"
+
+  def build_imap_presence(email, state, reason), do:
+    imap_presence(
+      email: email,
+      pid: pid_to_string(self()), 
+      state: state, 
+      reason: reason      
+      ) 
 
 end 
 

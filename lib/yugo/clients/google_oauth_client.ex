@@ -66,38 +66,61 @@ defmodule Yugo.Clients.GoogleOAuthClient do
   See the top of this page for example `Application` usage.
   """
 
-  def handle_info({:do_init, args}, _state) do 
+  def handle_info({:do_init, args}, state) do 
+    email = args[:email]
     credentials = Application.get_env(:yugo, :google) 
     token = WebClient.get_access_token(
                       Keyword.get(credentials, :client_id), 
                       Keyword.get(credentials, :client_secret), 
                       args[:password]
                     )
-            |> Map.get("access_token")
 
-    {:ok, socket} =
-      if args[:tls] do
-        :ssl.connect(
-          args[:server],
-          args[:port],
-          ssl_opts(args[:server], args[:ssl_verify])
-        ) 
-      else
-        :gen_tcp.connect(args[:server], args[:port], @common_connect_opts)
-      end
+    token = 
+      if is_map(token) and Map.get(token, "access_token") != nil do
+        Map.get(token, "access_token") 
+      else 
+        nil 
+      end     
 
-    conn = %Conn{
-      tls: args[:tls],
-      socket: socket,
-      email: args[:email],
-      server: args[:server],
-      username: args[:username],
-      password: token,
-      mailbox: args[:mailbox],
-      ssl_verify: args[:ssl_verify]
-    }
+    if token do 
+      res = 
+        if args[:tls] do
+          :ssl.connect(
+            args[:server],
+            args[:port],
+            ssl_opts(args[:server], args[:ssl_verify])
+          )
 
-    {:noreply, conn}
+        else
+          :gen_tcp.connect(args[:server], args[:port], @common_connect_opts)
+        end
+
+        case res do 
+          {:ok, socket} ->
+            :ok = Utils.register_and_publish_presence(email, :off, "Connected")
+              conn = %Conn{
+                tls: args[:tls],
+                socket: socket,
+                email: email,
+                server: args[:server],
+                username: args[:username],
+                password: token,
+                mailbox: args[:mailbox],
+                ssl_verify: args[:ssl_verify]
+              } 
+              {:noreply, conn}
+
+          {:error, _error} -> 
+            :ok = Utils.register_and_publish_presence(email, :off, "Failed to Connect")
+            Process.sleep(@socket_reconnection_timeout) 
+            {:stop, :normal, state}
+        end
+
+    else
+      :ok = Utils.register_and_publish_presence(email, :off, "Invalid Google Credentials") 
+      Process.sleep(@invalid_token_timeout)
+      {:stop, :normal, state} 
+    end
   end
 
   def handle_info({:timeout , expiration_timer , :expired_token}, conn) when 
