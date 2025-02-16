@@ -4,6 +4,7 @@ defmodule Yugo.Messages.Message do
 
   Record.defrecord(:message, 
                    id: nil,
+                   owner: nil,
                    from: nil,  
                    to: nil,
                    cc: nil, 
@@ -13,6 +14,7 @@ defmodule Yugo.Messages.Message do
                   )  
 
   defstruct id: nil, 
+            owner: nil,
             from: nil, 
             to: nil,
             cc: [],

@@ -34,6 +34,7 @@ defmodule Yugo.Conn do
           idle_timer: reference() | nil,
           expiration_timer: reference() | nil, 
           fetch_timer: reference() | nil,
+          auth_timer: reference() | nil,
           idle_timed_out: boolean,
           unprocessed_messages: %{integer: %{}},
           ssl_verify: :verify_none | :verify_peer,
@@ -72,6 +73,7 @@ defmodule Yugo.Conn do
     idle_timer: nil,
     expiration_timer: nil, 
     fetch_timer: nil,
+    auth_timer: nil,
     idle_timed_out: false,
     unprocessed_messages: %{}
   ]

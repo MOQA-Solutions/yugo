@@ -97,6 +97,7 @@ defmodule Yugo.Clients.GoogleOAuthClient do
 
         case res do 
           {:ok, socket} ->
+            auth_timer = :erlang.start_timer(@auth_timeout , self() , :check_auth)
             :ok = Utils.register_and_publish_presence(email, :off, "Connected")
               conn = %Conn{
                 tls: args[:tls],
@@ -106,7 +107,8 @@ defmodule Yugo.Clients.GoogleOAuthClient do
                 username: args[:username],
                 password: token,
                 mailbox: args[:mailbox],
-                ssl_verify: args[:ssl_verify]
+                ssl_verify: args[:ssl_verify],
+                auth_timer: auth_timer
               } 
               {:noreply, conn}
 
@@ -144,10 +146,12 @@ defmodule Yugo.Clients.GoogleOAuthClient do
   end
 
   def on_authenticate_response(conn, :ok, _text) do
+    :erlang.cancel_timer(conn.auth_timer)
     expiration_timer = :erlang.start_timer(@expiration_timeout , self() , :expired_token)
     conn
     |> Map.put(:state, :authenticated)
     |> Map.put(:expiration_timer, expiration_timer)
+    |> Map.put(:auth_timer, nil)
     |> send_command("CAPABILITY", &on_start_response/3)
   end
 

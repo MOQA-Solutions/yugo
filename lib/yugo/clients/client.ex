@@ -20,6 +20,7 @@ defmodule Yugo.Clients.Client do
         @socket_reconnection_timeout 5000 
         @login_failure_timeout 5000
         @invalid_token_timeout 5000
+        @auth_timeout 8000
 
         @spec start_link(
                 email: String.t(),
@@ -111,6 +112,12 @@ defmodule Yugo.Clients.Client do
 
           {:noreply, conn}
         end
+
+        def handle_info({:timeout , auth_timer , :check_auth}, conn) when 
+          conn.state == :not_authenticated and 
+          conn.auth_timer == auth_timer do 
+            {:stop, :normal, conn}
+        end   
 
 ##################### handling infos only if the server is free #######################
 
@@ -394,10 +401,9 @@ defmodule Yugo.Clients.Client do
           
           new_msg = msg
                     |> package_message()
-                    |> Messages.normalize_message()
+                    |> Messages.normalize_message(conn.email)
 
-          :ok = Messages.global_put(Utils.message_struct_to_tuple(new_msg))
-          :ok = Messages.local_put(conn.email, new_msg.id) 
+          :ok = Messages.put(Utils.message_struct_to_tuple(new_msg))
           Utils.publish({:message, conn.email, new_msg})
 
           conn 
@@ -662,7 +668,7 @@ defmodule Yugo.Clients.Client do
                                 )
                   message_ID = receive_fetch_message_id_result(new_conn) 
                    
-                  {new_conn, if Messages.new_message?(conn.email, message_ID) do 
+                  {new_conn, if Messages.new_message?(message_ID) do 
                                [message_index | acc]
                              else 
                                acc 
@@ -722,8 +728,8 @@ defmodule Yugo.Clients.Client do
                   <<" <", _rest::binary>> -> 
                     <<" ", message_id::binary>> = data 
                     receive_fetch_message_id_result(conn, message_id
-                                                    |> String.split()
-                                                    |> List.first()
+                                                          |> String.split()
+                                                          |> List.first()
                                                   ) 
 
                   <<tag::binary-size(12), message_id::binary>> when 

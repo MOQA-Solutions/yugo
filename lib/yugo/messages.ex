@@ -5,23 +5,21 @@ defmodule Yugo.Messages do
 
   @all_messages_topic "messages:*"
   @table :message 
-  @messages_part_size 20
+  @messages_part_size 40
+
+  @index :owner
 
 ############################ Database API ########################### 
 
-  def global_get(key), do: MnesiaDatabase.safe_read(@table, key)
+  def get(key), do: MnesiaDatabase.safe_read(@table, key)
 
-  def local_get(table, key), do: MnesiaDatabase.safe_read(String.to_atom(table), key)
+  def index_get(key), do: MnesiaDatabase.safe_index_read(@table, key, @index)
 
-  def global_put(message), do: MnesiaDatabase.safe_write(message)
-
-  def local_put(table, id), do: MnesiaDatabase.safe_write({String.to_atom(table), id, nil})
+  def put(message), do: MnesiaDatabase.safe_write(message)
 
   def delete(key), do: MnesiaDatabase.safe_delete(@table, key) 
 
-  def global_all_keys(), do: MnesiaDatabase.all_keys(@table)
-
-  def local_all_keys(table), do: MnesiaDatabase.all_keys(table) 
+  def all_keys(), do: MnesiaDatabase.all_keys(@table)
 
 ######################################################################
 
@@ -35,12 +33,12 @@ defmodule Yugo.Messages do
     "messages:#{email}"
 
   def get_all_messages(), do:  
-    global_all_keys()
+    all_keys()
     |> Enum.reduce(
                     [], 
                     fn(key, acc) -> 
                       [
-                        global_get(key)
+                        get(key)
                         |> List.first()
                         | acc
                       ] 
@@ -48,19 +46,7 @@ defmodule Yugo.Messages do
                   )
 
   def get_messages_by_email(email), do: 
-    email 
-    |> String.to_atom() 
-    |> local_all_keys() 
-    |> Enum.reduce(
-                    [], 
-                    fn(key, acc) -> 
-                      [
-                        global_get(key)
-                        |> List.first()
-                        | acc
-                      ] 
-                    end
-                  )
+    index_get(email)
 
   def get_next_part_of_messages(messages_IDs, start_index), do:  
     messages_IDs
@@ -69,7 +55,7 @@ defmodule Yugo.Messages do
                     [], 
                     fn(message_id, acc) ->
                       [
-                        global_get(message_id)
+                        get(message_id)
                         |> List.first() 
                         |> Utils.message_tuple_to_struct() 
                         |> make_ui_message()
@@ -79,17 +65,16 @@ defmodule Yugo.Messages do
                  )
     |> Enum.reverse()
            
-  def new_message?(table, key) do
-    if (global_get(key) == [] or local_get(table, key) == []) do 
-      true
-    else 
-      false 
-    end
+  def new_message?(id) do
+    msg_id = message_id(id)
+    get(msg_id) == []
   end 
 
-  def normalize_message(msg) do 
+  def normalize_message(msg, owner) do 
     %Message{
-        id: String.replace(msg[:message_id], " ", ""),
+        id: message_id(msg[:message_id]),
+
+        owner: owner,
 
         from: msg[:from]
               |> case do 
@@ -115,6 +100,11 @@ defmodule Yugo.Messages do
     message
     |> Map.put(:cc, nil)
     |> Map.put(:body, nil)
+
+  def message_id(id), do: 
+    id   
+    |> String.replace(" ", "")
+    
 
 ##################################################################################
 

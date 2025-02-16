@@ -1,10 +1,8 @@
 defmodule Yugo.Utils do 
 
-  import Yugo.Messages.Message
-  import Yugo.Presence.ImapPresence
+  import Yugo.{Messages.Message, Presence.ImapPresence}
 
-  alias Yugo.Messages.Message
-  alias Yugo.Presence.ImapPresences
+  alias Yugo.{Messages.Message, Presence.ImapPresences, ImapStates.ImapState}
 
   @publisher :publisher
   @presence_server :presence_server
@@ -39,6 +37,7 @@ defmodule Yugo.Utils do
   def message_struct_to_tuple(message), do: 
     message(
         id: message.id, 
+        owner: message.owner,
         from: message.from, 
         to: message.to, 
         cc: message.cc, 
@@ -50,12 +49,20 @@ defmodule Yugo.Utils do
   def message_tuple_to_struct(message), do: 
     %Message{
       id: message(message, :id),
+      owner: message(message, :owner),
       from: message(message, :from),
       to: message(message, :to),
       cc: message(message, :cc),
       subject: message(message, :subject),
       date: message(message, :date),
       body: message(message, :body)
+    }
+
+  def imap_state_tuple_to_struct({email, state, reason}), do: 
+    %ImapState{
+      id: email,
+      state: state, 
+      reason: reason
     }
 
   def pid_to_string(pid) do 

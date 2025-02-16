@@ -82,6 +82,7 @@ defmodule Yugo.Clients.BasicClient do
 
     case res do 
       {:ok, socket} ->
+        auth_timer = :erlang.start_timer(@auth_timeout , self() , :check_auth)
         :ok = Utils.register_and_publish_presence(email, :off, "Connected")
         conn = %Conn{
           tls: args[:tls],
@@ -91,7 +92,8 @@ defmodule Yugo.Clients.BasicClient do
           username: args[:username],
           password: args[:password],
           mailbox: args[:mailbox],
-          ssl_verify: args[:ssl_verify]
+          ssl_verify: args[:ssl_verify], 
+          auth_timer: auth_timer
         }
         {:noreply, conn}
 
@@ -118,7 +120,8 @@ defmodule Yugo.Clients.BasicClient do
   end
 
   def on_login_response(conn, :ok, _text) do
-    %{conn | state: :authenticated}
+    :erlang.cancel_timer(conn.auth_timer)
+    %{conn | state: :authenticated, auth_timer: nil}
     |> send_command("CAPABILITY", &on_start_response/3)
   end
 

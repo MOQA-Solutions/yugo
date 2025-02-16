@@ -2,6 +2,8 @@ defmodule Yugo.Presence.PresenceServer do
   @moduledoc false
   use GenServer
 
+  import Yugo.Presence.ImapPresence
+
   alias Yugo.{Utils, Presence.ImapPresences}
 
   def start_link(args), do: 
@@ -21,9 +23,7 @@ defmodule Yugo.Presence.PresenceServer do
   end
 
   def handle_info({:"EXIT", pid, _reason}, state) do
-    {:ok, email} = clear_imap_worker_data(pid)
-    msg = {:imap_state, email, :off, "Shutdown"}
-    Utils.publish(msg)
+    :ok = clear_imap_worker_data(pid)
     {:noreply, state}
   end
 
@@ -31,15 +31,15 @@ defmodule Yugo.Presence.PresenceServer do
 
 ############################################################################################### 
 
-  defp clear_imap_worker_data(pid) do
-    email = 
-      Utils.pid_to_string(pid)
-      |> ImapPresences.index_get()
-      |> List.first()
-      |> elem(1)
-
-    :ok = ImapPresences.delete(email)
-    {:ok, email}
+  defp clear_imap_worker_data(pid) do 
+    Utils.pid_to_string(pid)
+    |> ImapPresences.index_get()
+    |> case do 
+         [] -> 
+           :ok
+         [imap_presence] ->
+           ImapPresences.delete(imap_presence(imap_presence, :email))
+       end
   end
 end
 
