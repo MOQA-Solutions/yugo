@@ -402,6 +402,7 @@ defmodule Yugo.Clients.Client do
           new_msg = msg
                     |> package_message()
                     |> Messages.normalize_message(conn.email)
+                    
 
           :ok = Messages.put(Utils.message_struct_to_tuple(new_msg))
           Utils.publish({:message, conn.email, new_msg})

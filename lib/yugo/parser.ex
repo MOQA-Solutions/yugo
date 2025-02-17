@@ -222,7 +222,7 @@ defmodule Yugo.Parser do
 
         envelope = %{
           date: rfc5322_to_datetime(date),
-          subject: subject,
+          subject: normalize_subject(subject),
           from: from,
           sender: sender,
           reply_to: reply_to,
@@ -472,21 +472,81 @@ defmodule Yugo.Parser do
     Enum.join(date ++ new_offset, " ")
   end 
 
-  defp do_normalize_offset(<<"+", _rest::binary>> = offset), do: [offset] 
-  defp do_normalize_offset("UT"), do: ["+0000"]
-  defp do_normalize_offset("GMT"), do: ["+0000"] 
-  defp do_normalize_offset("EDT"), do: ["-0400"] 
-  defp do_normalize_offset("EST"), do: ["-0500"]
-  defp do_normalize_offset("CDT"), do: ["-0500"]
-  defp do_normalize_offset("CST"), do: ["-0600"]
-  defp do_normalize_offset("MDT"), do: ["-0600"]
-  defp do_normalize_offset("MST"), do: ["-0700"]
-  defp do_normalize_offset("PDT"), do: ["-0700"]
-  defp do_normalize_offset("PST"), do: ["-0800"]
-  defp do_normalize_offset(<<"(", _rest::binary>>), do: [] 
   defp do_normalize_offset(_), do: ["+0000"]
 
   defp downcase(nil), do: "nil" 
   defp downcase(str), do: String.downcase(str)
+
+  defp normalize_subject(subject), do: 
+    subject 
+    |> String.split() 
+    |> Enum.reduce(
+                    "",
+                    fn(str, acc) -> 
+                      acc <> normalize_subject_part(str) 
+                    end 
+              )   
+
+  defp normalize_subject_part(<<"=?UTF-8?B?", rest::binary>>), do: 
+    normalize_base64_subject(rest, "") 
+
+  defp normalize_subject_part(<<"=?utf-8?B?", rest::binary>>), do: 
+    normalize_base64_subject(rest, "")
+
+  defp normalize_subject_part(<<"=?UTF-8?b?", rest::binary>>), do: 
+    normalize_base64_subject(rest, "") 
+
+  defp normalize_subject_part(<<"=?utf-8?b?", rest::binary>>), do: 
+    normalize_base64_subject(rest, "")
+
+  defp normalize_subject_part(<<"=?UTF-8?Q?", rest::binary>>), do: 
+    normalize_quoted_printable_subject(rest, "") 
+
+  defp normalize_subject_part(<<"=?utf-8?Q?", rest::binary>>), do: 
+    normalize_quoted_printable_subject(rest, "")
+
+  defp normalize_subject_part(<<"=?UTF-8?q?", rest::binary>>), do: 
+    normalize_quoted_printable_subject(rest, "") 
+
+  defp normalize_subject_part(<<"=?utf-8?q?", rest::binary>>), do: 
+    normalize_quoted_printable_subject(rest, "")
+
+  defp normalize_subject_part(<<"=?ISO-8859-1?Q?", rest::binary>>), do: 
+    normalize_iso8859_subject(rest, "") 
+
+  defp normalize_subject_part(<<"=?iso-8859-1?Q?", rest::binary>>), do: 
+    normalize_iso8859_subject(rest, "")
+
+  defp normalize_subject_part(<<"=?ISO-8859-1?q?", rest::binary>>), do: 
+    normalize_iso8859_subject(rest, "") 
+
+  defp normalize_subject_part(<<"=?iso-8859-1?q?", rest::binary>>), do: 
+    normalize_iso8859_subject(rest, "")
+
+  defp normalize_subject_part(subject), do: 
+    subject                
+
+  defp normalize_base64_subject(<<"?=">>, acc), do: 
+    Base.decode64!(acc) 
+
+  defp normalize_base64_subject(<<char::binary-size(1), rest::binary>>, acc), do: 
+    normalize_base64_subject(rest, acc <> char) 
+
+  defp normalize_quoted_printable_subject(<<"?=">>, acc), do:
+    acc 
+
+  defp normalize_quoted_printable_subject(<<"=", x::binary-size(2), rest::binary>>, acc
+      ), do:
+    normalize_quoted_printable_subject(rest, acc <> Base.decode16!(x)) 
+
+  defp normalize_quoted_printable_subject(<<char::binary-size(1), rest::binary>>, acc), do: 
+    normalize_quoted_printable_subject(rest, acc <> char)
+
+  defp normalize_iso8859_subject(<<"?=">>, acc), do: 
+    :unicode.characters_to_binary(acc, :latin1) 
+
+  defp normalize_iso8859_subject(<<char::binary-size(1), rest::binary>>, acc), do:
+    :unicode.characters_to_binary(rest, acc <> char) 
   
 end
+
